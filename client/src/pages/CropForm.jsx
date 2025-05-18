@@ -67,26 +67,29 @@ const CropForm = ({ setPredictionResults, setIsLoading }) => {
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('Form submitted with data:', formData);
     
     if (!validateForm()) {
+      console.log('Form validation failed');
       return;
     }
     
     try {
       setIsLoading(true);
+      console.log('Sending request to backend...');
       
       // Send data to backend
       const response = await axios.post('http://localhost:5000/api/predict', formData);
+      console.log('Received response:', response.data);
       
       // Store results and navigate to results page
       setPredictionResults(response.data);
       navigate('/results');
     } catch (error) {
-      console.error('Error making prediction:', error);
-      alert('An error occurred while making the prediction. Please try again.');
+      console.error('Error making prediction:', error.response?.data || error.message);
+      alert(`Error: ${error.response?.data?.message || error.message}`);
     } finally {
       setIsLoading(false);
     }

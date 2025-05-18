@@ -1,25 +1,21 @@
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-import joblib
 import os
+import joblib
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+import xgboost as xgb
+from sklearn.metrics import mean_squared_error, r2_score
 
-def main():
+def train_model():
     print("Loading and processing crop yield dataset...")
     # Load the data
     data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'crop_yield.csv')
     df = pd.read_csv(data_path)
     
-    # Data exploration
     print(f"Dataset shape: {df.shape}")
     print("\nSample data:")
     print(df.head())
-    print("\nData information:")
-    print(df.info())
-    print("\nSummary statistics:")
-    print(df.describe())
     
     # Check for missing values
     print("\nMissing values count:")
@@ -34,20 +30,30 @@ def main():
         label_encoders[column] = le
     
     # Save the label encoders for later use
-    encoders_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models')
+    encoders_dir = os.path.dirname(__file__)
     os.makedirs(encoders_dir, exist_ok=True)
     joblib.dump(label_encoders, os.path.join(encoders_dir, 'label_encoders.pkl'))
     
-    # Feature engineering
+    # Feature engineering with correct column names
     print("\nPerforming feature engineering...")
-    df['NPK_Ratio'] = df['Fertilizer'] / df['Area']
-    df['Pesticide_Ratio'] = df['Pesticide'] / df['Area']
-    df['Rainfall_Per_Area'] = df['Annual_Rainfall'] / df['Area']
     
-    # Feature selection
-    features = ['Crop', 'Season', 'State', 'Area', 'Annual_Rainfall', 
-                'Fertilizer', 'Pesticide', 'NPK_Ratio', 'Pesticide_Ratio', 
-                'Rainfall_Per_Area', 'Crop_Year']
+    df['Fertilizer_per_hectare'] = df['Fertilizer'] / df['Area']
+    df['Pesticide_per_hectare'] = df['Pesticide'] / df['Area']
+    df['Rainfall_per_hectare'] = df['Annual_Rainfall'] / df['Area']
+    
+    # Season factor calculation
+    df['Season_Factor'] = df.apply(
+        lambda x: 1.2 if x['Season'] == 'Winter'
+        else 0.8 if x['Season'] == 'Summer'
+        else 1.0, axis=1
+    )
+    
+    # Feature selection with available columns
+    features = [
+        'Crop', 'Season', 'State', 'Area',
+        'Fertilizer_per_hectare', 'Pesticide_per_hectare', 'Rainfall_per_hectare',
+        'Season_Factor', 'Crop_Year'
+    ]
     
     X = df[features]
     y = df['Yield']  # Target variable
@@ -62,28 +68,50 @@ def main():
     # Split data into training and testing sets
     X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
     
-    # Train the model
-    print("\nTraining Gradient Boosting Regressor model...")
-    model = GradientBoostingRegressor(
-        n_estimators=100,
-        learning_rate=0.1,
-        max_depth=3,
+    # Initialize XGBoost model
+    xgb_model = xgb.XGBRegressor(random_state=42)
+    
+    # Parameter distribution for random search
+    param_distributions = {
+        'n_estimators': [100, 200],  # Reduced number of trees
+        'max_depth': [3, 4, 5],
+        'learning_rate': [0.05, 0.1],
+        'subsample': [0.8, 0.9],
+        'colsample_bytree': [0.8, 0.9],
+        'min_child_weight': [3, 5],
+        'gamma': [0, 0.1]
+    }
+    
+    # Perform random search with cross-validation
+    print("\nPerforming random search for hyperparameter tuning...")
+    random_search = RandomizedSearchCV(
+        estimator=xgb_model,
+        param_distributions=param_distributions,
+        n_iter=10,  # Number of parameter settings sampled
+        scoring='neg_mean_squared_error',
+        cv=3,  # Reduced number of cross-validation folds
+        n_jobs=-1,
+        verbose=2,
         random_state=42
     )
     
-    model.fit(X_train, y_train)
+    random_search.fit(X_train, y_train)
+    
+    # Get best model
+    best_model = random_search.best_estimator_
     
     # Evaluate the model
-    train_score = model.score(X_train, y_train)
-    test_score = model.score(X_test, y_test)
+    train_score = best_model.score(X_train, y_train)
+    test_score = best_model.score(X_test, y_test)
     
+    print(f"\nBest parameters found: {random_search.best_params_}")
     print(f"\nModel R² score on training data: {train_score:.4f}")
     print(f"Model R² score on testing data: {test_score:.4f}")
     
     # Get feature importance
     feature_importance = pd.DataFrame({
         'Feature': features,
-        'Importance': model.feature_importances_
+        'Importance': best_model.feature_importances_
     }).sort_values('Importance', ascending=False)
     
     print("\nFeature Importance:")
@@ -91,93 +119,10 @@ def main():
     
     # Save the model
     model_path = os.path.join(encoders_dir, 'crop_yield_model.pkl')
-    joblib.dump(model, model_path)
+    joblib.dump(best_model, model_path)
     print(f"\nModel saved to {model_path}")
     
-    # Generate synthetic dataset for future predictions
-    create_synthetic_dataset(df, label_encoders)
-    
-    return model, label_encoders, scaler
-
-def create_synthetic_dataset(df, label_encoders):
-    """Create a synthetic dataset with forecasted data for future years."""
-    print("\nGenerating synthetic dataset for future predictions...")
-    
-    # Calculate average values for NPK depletion rates based on crop type
-    crop_npk_depletion = {}
-    crops = df['Crop'].unique()
-    
-    for crop in crops:
-        crop_data = df[df['Crop'] == crop]
-        if len(crop_data) > 1:
-            # Calculate average NPK usage per yield unit
-            avg_npk_per_yield = crop_data['NPK_Ratio'].mean() / crop_data['Yield'].mean()
-            crop_npk_depletion[crop] = avg_npk_per_yield
-        else:
-            # Default value if not enough data
-            crop_npk_depletion[crop] = 0.05
-    
-    # Create synthetic data for 2025-2030
-    future_years = list(range(2025, 2031))
-    synthetic_data = []
-    
-    # Get sample states and seasons
-    states = df['State'].unique()
-    seasons = df['Season'].unique()
-    
-    for crop in crops:
-        for year in future_years:
-            for state in states[:5]:  # Limit to first 5 states for simplicity
-                for season in seasons[:2]:  # Limit to first 2 seasons
-                    # Base values from historical averages
-                    crop_data = df[df['Crop'] == crop]
-                    if len(crop_data) > 0:
-                        avg_area = crop_data['Area'].mean()
-                        avg_rainfall = crop_data['Annual_Rainfall'].mean()
-                        avg_fertilizer = crop_data['Fertilizer'].mean()
-                        avg_pesticide = crop_data['Pesticide'].mean()
-                        avg_yield = crop_data['Yield'].mean()
-                        
-                        # Add some random variation
-                        area = avg_area * np.random.uniform(0.9, 1.1)
-                        rainfall = avg_rainfall * np.random.uniform(0.9, 1.1)
-                        
-                        # Adjust values based on future year (accounting for climate change, etc.)
-                        year_factor = 1 + 0.01 * (year - 2025)
-                        fertilizer = avg_fertilizer * year_factor * np.random.uniform(0.95, 1.05)
-                        pesticide = avg_pesticide * year_factor * np.random.uniform(0.95, 1.05)
-                        
-                        # Project yield trends (increasing with technology)
-                        yield_value = avg_yield * (1 + 0.02 * (year - 2025)) * np.random.uniform(0.9, 1.1)
-                        
-                        # Calculate production
-                        production = yield_value * area
-                        
-                        # Create data point
-                        data_point = {
-                            'Crop': crop,
-                            'Crop_Year': year,
-                            'Season': season,
-                            'State': state,
-                            'Area': area,
-                            'Production': production,
-                            'Annual_Rainfall': rainfall,
-                            'Fertilizer': fertilizer,
-                            'Pesticide': pesticide,
-                            'Yield': yield_value,
-                            'NPK_Ratio': fertilizer / area,
-                            'Pesticide_Ratio': pesticide / area,
-                            'Rainfall_Per_Area': rainfall / area
-                        }
-                        synthetic_data.append(data_point)
-    
-    # Convert to DataFrame
-    synthetic_df = pd.DataFrame(synthetic_data)
-    
-    # Save synthetic dataset
-    output_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'synthetic_future_data.csv')
-    synthetic_df.to_csv(output_path, index=False)
-    print(f"Synthetic dataset saved to {output_path}")
+    return best_model, label_encoders, scaler
 
 if __name__ == "__main__":
-    main() 
+    train_model()

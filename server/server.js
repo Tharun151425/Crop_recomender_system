@@ -124,32 +124,52 @@ app.post('/api/predict', (req, res) => {
       message: 'Model not found. Please train the model first.' 
     });
   }
-  
-  const python = spawn('python', [predictScript]);
+    console.log('Spawning Python process with input:', JSON.stringify(req.body));
+  const python = spawn('python', [predictScript, JSON.stringify(req.body)]);
   
   let output = '';
   let errorOutput = '';
   
-  // Send input data to the Python script
-  python.stdin.write(JSON.stringify(req.body));
-  python.stdin.end();
-  
   python.stdout.on('data', (data) => {
-    output += data.toString();
+    const stdout = data.toString();
+    console.log('Python stdout:', stdout);
+    output += stdout;
   });
   
   python.stderr.on('data', (data) => {
-    errorOutput += data.toString();
+    const stderr = data.toString();
+    console.error('Python stderr:', stderr);
+    errorOutput += stderr;
   });
   
   python.on('close', (code) => {
     console.log(`Prediction process exited with code ${code}`);
-    
-    if (code === 0) {
+      if (code === 0) {
       try {
         const predictions = JSON.parse(output);
-        console.log('Prediction JSON response:', predictions); // <-- Log output here
-        res.json(predictions);
+        console.log('Prediction JSON response:', predictions);
+        
+        if (predictions.success === false) {
+          return res.status(500).json({
+            status: 'error',
+            message: predictions.error || 'Prediction failed'
+          });
+        }
+
+        // If we have recommendations, format them
+        if (predictions.recommendations) {
+          console.log('Top 5 recommended crops:', predictions.recommendations);
+          return res.json({
+            status: 'success',
+            recommendations: predictions.recommendations
+          });
+        }
+
+        // Single crop prediction
+        res.json({
+          status: 'success',
+          prediction: predictions
+        });
       } catch (error) {
         console.error('Error parsing prediction output:', error);
         res.status(500).json({ 
@@ -184,4 +204,4 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
-}); 
+});
