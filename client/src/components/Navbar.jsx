@@ -36,7 +36,13 @@ const Navbar = () => {
                   to="/crop-form" 
                   className="px-3 py-2 rounded-md text-sm font-medium hover:bg-primary-400 transition-colors"
                 >
-                  Crop Prediction
+                  Basic Prediction
+                </Link>
+                <Link 
+                  to="/crop-form2" 
+                  className="px-3 py-2 rounded-md text-sm font-medium hover:bg-primary-400 transition-colors"
+                >
+                  Smart Prediction
                 </Link>
                 <Link 
                   to="/about" 
@@ -112,7 +118,14 @@ const Navbar = () => {
             className="block px-3 py-2 rounded-md text-base font-medium hover:bg-primary-400"
             onClick={toggleMenu}
           >
-            Crop Prediction
+            Basic Prediction
+          </Link>
+          <Link
+            to="/crop-form2"
+            className="block px-3 py-2 rounded-md text-base font-medium hover:bg-primary-400"
+            onClick={toggleMenu}
+          >
+            Smart Prediction
           </Link>
           <Link
             to="/about"
@@ -127,4 +140,4 @@ const Navbar = () => {
   );
 };
 
-export default Navbar; 
+export default Navbar;
