@@ -1,0 +1,187 @@
+const express = require('express');
+const cors = require('cors');
+const morgan = require('morgan');
+const { spawn } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+
+const app = express();
+const PORT = process.env.PORT || 5002;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(morgan('dev'));
+
+// Serve static files from the React app
+app.use(express.static(path.join(__dirname, '../client/dist')));
+
+// Helper function to run Python prediction script
+const runPrediction = (scriptName, inputData) => {
+  return new Promise((resolve, reject) => {    const scriptPath = path.join(__dirname, 'models', scriptName);
+    
+    if (!fs.existsSync(scriptPath)) {
+      reject(new Error(`Prediction script not found: ${scriptPath}`));
+      return;
+    }
+
+    // Change working directory to the script's directory so it can find its dependencies
+    const scriptDir = path.dirname(scriptPath);
+    const python = spawn('python', [scriptPath], {
+      cwd: scriptDir
+    });
+    let output = '';
+    let errorOutput = '';    // Send input data to Python script
+    python.stdin.write(`${Number(inputData.n_value)}\n`);
+    python.stdin.write(`${Number(inputData.p_value)}\n`);
+    python.stdin.write(`${Number(inputData.k_value)}\n`);
+    python.stdin.write(`${inputData.region}\n`);
+    python.stdin.write(`${Number(inputData.area)}\n`);
+    python.stdin.end();    python.stdout.on('data', (data) => {
+      const str = data.toString();
+      console.log('Received output:', str);
+      output += str;
+    });
+
+    python.stderr.on('data', (data) => {
+      const str = data.toString();
+      console.error('Received error:', str);
+      errorOutput += str;
+    });    python.on('close', (code) => {
+      console.log('Python process output:', output);
+      console.log('Python process error output:', errorOutput);
+      
+      if (code === 0) {
+        // Parse the output into a structured format
+        try {
+          if (!output.trim()) {
+            reject(new Error('No output received from prediction script'));
+            return;
+          }
+
+          const plans = output.split('\n\nPlan').filter(Boolean);
+          if (plans.length === 0) {
+            reject(new Error('No plans found in prediction output'));
+            return;
+          }
+
+          const structuredPlans = plans.map(plan => {
+            try {
+              const [planHeader, ...planData] = plan.split('\n');
+              const planNumberMatch = planHeader.match(/\d+/);
+              const startCropMatch = planHeader.match(/Start: (.*?)\)/);
+              
+              if (!planNumberMatch || !startCropMatch) {
+                throw new Error(`Invalid plan header format: ${planHeader}`);
+              }
+
+              const planNumber = planNumberMatch[0];
+              const startCrop = startCropMatch[1];
+              
+              const predictions = planData
+                .filter(line => line.trim().startsWith('{'))
+                .map(line => {
+                  // Convert string representation of numpy values to regular numbers
+                  const cleanLine = line.replace(/np\.float(32|64)\(([\d.]+)\)/g, '$2');
+                  try {
+                    return JSON.parse(cleanLine);
+                  } catch (err) {
+                    console.error('Failed to parse prediction line:', line);
+                    throw err;
+                  }
+                });
+
+              if (predictions.length === 0) {
+                throw new Error('No valid predictions found in plan');
+              }
+
+              return {
+                planNumber,
+                startCrop,
+                predictions
+              };
+            } catch (err) {
+              console.error('Error processing plan:', plan);
+              throw err;
+            }
+          });
+
+          resolve({
+            status: 'success',
+            plans: structuredPlans
+          });
+        } catch (error) {
+          console.error('Error parsing prediction output:', error);
+          console.error('Raw output:', output);
+          reject(new Error(`Error parsing prediction output: ${error.message}`));
+        }
+      } else {
+        console.error('Python process failed with code:', code);
+        console.error('Error output:', errorOutput);
+        reject(new Error(`Prediction process failed: ${errorOutput || 'Unknown error'}`));
+      }
+    });
+    });
+
+    python.on('error', (error) => {
+      reject(new Error(`Failed to start prediction process: ${error.message}`));
+    });
+  });
+};
+
+// Kharif prediction endpoint
+app.post('/api/predict/kharif', async (req, res) => {
+  try {
+    console.log('Received Kharif prediction request:', req.body);
+    
+    if (!req.body.n_value || !req.body.p_value || !req.body.k_value || !req.body.region || !req.body.area) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Missing required fields'
+      });
+    }
+
+    const result = await runPrediction('kharif_model/predict_kharif.py', req.body);
+    console.log('Kharif prediction result:', result);
+    res.json(result);
+  } catch (error) {
+    console.error('Kharif prediction error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
+// Rabi prediction endpoint
+app.post('/api/predict/rabi', async (req, res) => {
+  try {
+    console.log('Received Rabi prediction request:', req.body);
+    
+    if (!req.body.n_value || !req.body.p_value || !req.body.k_value || !req.body.region || !req.body.area) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Missing required fields'
+      });
+    }
+
+    const result = await runPrediction('rabi_model/predict_rabi.py', req.body);
+    console.log('Rabi prediction result:', result);
+    res.json(result);
+  } catch (error) {
+    console.error('Rabi prediction error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
+// Fallback handler for all other routes - serve React app
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../client/dist', 'index.html'));
+});
+
+app.listen(PORT, () => {
+  console.log(`Season-based Crop Server is running on port ${PORT}`);
+});

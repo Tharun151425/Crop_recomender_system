@@ -33,6 +33,12 @@ const Navbar = () => {
                   Home
                 </Link>
                 <Link 
+                  to="/predictor" 
+                  className="px-3 py-2 rounded-md text-sm font-medium hover:bg-primary-400 transition-colors"
+                >
+                  Kharif-Rabi Predictor
+                </Link>
+                <Link 
                   to="/crop-form" 
                   className="px-3 py-2 rounded-md text-sm font-medium hover:bg-primary-400 transition-colors"
                 >
@@ -49,6 +55,12 @@ const Navbar = () => {
                   className="px-3 py-2 rounded-md text-sm font-medium hover:bg-primary-400 transition-colors"
                 >
                   About
+                </Link>
+                <Link 
+                  to="/crop-form3" 
+                  className="px-3 py-2 rounded-md text-sm font-medium hover:bg-primary-400 transition-colors"
+                >
+                  Kharif-Rabi
                 </Link>
               </div>
             </div>

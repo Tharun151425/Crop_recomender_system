@@ -11,28 +11,6 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class NumpyJSONEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, (np.integer, np.floating)):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return super(NumpyJSONEncoder, self).default(obj)
-
-def convert_numpy_types(obj):
-    if isinstance(obj, (np.intc, np.intp, np.int8, np.int16, np.int32,
-                       np.int64, np.uint8, np.uint16, np.uint32, np.uint64)):
-        return int(obj)
-    elif isinstance(obj, (np.float16, np.float32, np.float64)):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    elif isinstance(obj, dict):
-        return {key: convert_numpy_types(value) for key, value in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_numpy_types(item) for item in obj]
-    return obj
-
 # State-wise climate data (average values)
 STATE_CLIMATE = {
     'Assam': {'temp': 25, 'rainfall': 2000},
@@ -96,29 +74,23 @@ def predict_best_crops(input_data: Dict[str, Any]) -> Dict[str, Any]:
         X_scaled = scaler.transform(X)
         
         # Get suitability scores for all crops
-        suitability = float(model.predict(X_scaled)[0])  # Convert to native Python float
+        suitability = model.predict(X_scaled)[0]
         
         # Calculate crop-specific scores and yields
         crop_scores = []
         for _, crop_row in crop_info.iterrows():
-            # Convert DataFrame row to dict with native Python types
-            crop_data = {
-                col: convert_numpy_types(val) 
-                for col, val in crop_row.items()
-            }
-            
             # Basic suitability check
-            if temperature < crop_data['Min_Temp'] or temperature > crop_data['Max_Temp']:
+            if temperature < crop_row['Min_Temp'] or temperature > crop_row['Max_Temp']:
                 continue
                 
-            if climate['rainfall'] < crop_data['Ideal_Rainfall'] * 0.5:
+            if climate['rainfall'] < crop_row['Ideal_Rainfall'] * 0.5:
                 continue
             
             # Calculate yield based on suitability and base yield
-            predicted_yield = crop_data['Base_Yield'] * suitability
+            predicted_yield = crop_row['Base_Yield'] * suitability
             
             # Calculate economics
-            revenue = predicted_yield * area * crop_data['Price_Per_Quintal']
+            revenue = predicted_yield * area * crop_row['Price_Per_Quintal']
             
             # Calculate cost (base cost + NPK cost)
             base_cost_per_hectare = 25000  # Base cultivation cost
@@ -129,33 +101,20 @@ def predict_best_crops(input_data: Dict[str, Any]) -> Dict[str, Any]:
             
             crop_scores.append({
                 'success': True,
-                'crop': crop_data['Crop'],
-                'yield': float(round(predicted_yield, 2)),
-                'profit': float(round(profit, 2)),
-                'revenue': float(round(revenue, 2)),
-                'cost': float(round(total_cost, 2))
+                'crop': crop_row['Crop'],
+                'yield': round(predicted_yield, 2),
+                'profit': round(profit, 2),
+                'revenue': round(revenue, 2),
+                'cost': round(total_cost, 2)
             })
         
         # Sort by profit and get top 5
         crop_scores.sort(key=lambda x: x['profit'], reverse=True)
         recommendations = crop_scores[:5]
         
-        # Convert any remaining NumPy types to native Python types
-        recommendations = convert_numpy_types(recommendations)
-          # Include input data in response
-        input_summary = {
-            'location': input_data.get('location'),
-            'season': input_data.get('season'),
-            'area': float(input_data.get('area', 1)),
-            'n_value': float(input_data.get('n_value', 0)),
-            'p_value': float(input_data.get('p_value', 0)),
-            'k_value': float(input_data.get('k_value', 0))
-        }
-        
         return {
             'success': True,
-            'recommendations': recommendations,
-            'input': input_summary
+            'recommendations': recommendations
         }
         
     except Exception as e:
@@ -178,8 +137,7 @@ if __name__ == "__main__":
     try:
         input_data = json.loads(sys.argv[1])
         result = predict_best_crops(input_data)
-        # Use custom encoder to handle NumPy types
-        print(json.dumps(result, cls=NumpyJSONEncoder))
+        print(json.dumps(result))
         sys.exit(0)
     except Exception as e:
         print(json.dumps({

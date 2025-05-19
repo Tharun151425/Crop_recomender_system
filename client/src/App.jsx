@@ -5,9 +5,12 @@ import Footer from './components/Footer';
 import Home from './pages/Home';
 import CropForm from './pages/CropForm';
 import CropForm2 from './pages/CropForm2';
+import CropForm3 from './pages/CropForm3';
 import Results from './pages/Results';
 import Results2 from './pages/Results2';
+import Results3 from './pages/Results3';
 import About from './pages/About';
+import CropPredictor from './pages/CropPredictor';
 import './App.css';
 
 function App() {
@@ -59,7 +62,10 @@ function App() {
                 />
               } 
             />
+            <Route path="/crop-form3" element={<CropForm3 setPredictionResults={setPredictionResults} setIsLoading={setIsLoading} />} />
+            <Route path="/results3" element={<Results3 predictionResults={predictionResults} isLoading={isLoading} />} />
             <Route path="/about" element={<About />} />
+            <Route path="/predictor" element={<CropPredictor />} />
           </Routes>
         </main>
         <Footer />
