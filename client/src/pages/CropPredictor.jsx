@@ -1,26 +1,6 @@
 import { useState } from 'react';
 import axios from 'axios';
 
-function parsePlans(raw) {
-  if (!raw) return null;
-  const plans = raw.split(/\n\s*Plan|^Plan/).filter(Boolean);
-  return plans.map((plan) => {
-    const lines = plan.trim().split('\n');
-    const header = lines[0];
-    const entries = lines.slice(1)
-      .map(line => {
-        try {
-          // Replace np.floatXX and single quotes for JSON parsing
-          return JSON.parse(line.replace(/np\.float(32|64)\(([^)]+)\)/g, '$2').replace(/'/g, '"'));
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean);
-    return { header, entries };
-  });
-}
-
 const inputLabel = {
   fontWeight: 600,
   marginBottom: 2,
@@ -58,6 +38,13 @@ const td = {
   fontSize: '0.97rem',
 };
 
+function formatFertilizer(fert) {
+  if (!Array.isArray(fert)) return '-';
+  if (fert.every(v => Number(v) === 0)) return '-';
+  const labels = ['N', 'P', 'K'];
+  return fert.map((v, i) => v > 0 ? `${labels[i]}: ${Number(v).toFixed(2)}` : null).filter(Boolean).join(', ');
+}
+
 const CropPredictor = () => {
   const [form, setForm] = useState({
     n_value: '',
@@ -68,7 +55,7 @@ const CropPredictor = () => {
     season: 'Kharif',
   });
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
+  const [plans, setPlans] = useState(null);
   const [error, setError] = useState(null);
 
   const handleChange = (e) => {
@@ -78,7 +65,7 @@ const CropPredictor = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setResult(null);
+    setPlans(null);
     setError(null);
     try {
       const url = form.season === 'Kharif'
@@ -91,15 +78,13 @@ const CropPredictor = () => {
         region: form.region,
         area: form.area,
       });
-      setResult(data.output);
+      setPlans(data.plans);
     } catch (err) {
       setError(err.response?.data?.error || err.message);
     } finally {
       setLoading(false);
     }
   };
-
-  const plans = parsePlans(result);
 
   return (
     <div style={{ maxWidth: 600, margin: '2rem auto', padding: 16 }}>
@@ -146,7 +131,7 @@ const CropPredictor = () => {
       </form>
 
       {/* User input summary */}
-      {result && (
+      {plans && (
         <div style={card}>
           <h3 style={{ marginBottom: 8, fontWeight: 700 }}>Your Inputs</h3>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
@@ -182,7 +167,7 @@ const CropPredictor = () => {
                   <td style={td}>{entry['Year']}</td>
                   <td style={td}>{entry['Crop']}</td>
                   <td style={td}>{Array.isArray(entry['NPK Before']) ? entry['NPK Before'].join(', ') : entry['NPK Before']}</td>
-                  <td style={td}>{Array.isArray(entry['Fertilizer Added']) ? entry['Fertilizer Added'].join(', ') : entry['Fertilizer Added']}</td>
+                  <td style={td}>{formatFertilizer(entry['Fertilizer Added'])}</td>
                   <td style={td}>{entry['Predicted Yield (q/ha)']}</td>
                   <td style={td}>{entry['Area (ha)']}</td>
                   <td style={td}>{entry['Revenue (INR)'] || entry['Revenue (Rs.)'] || entry['Revenue']}</td>

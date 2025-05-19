@@ -2,6 +2,19 @@ import pandas as pd
 import numpy as np
 import joblib
 import random
+import json
+
+def convert_np(obj):
+    if isinstance(obj, dict):
+        return {k: convert_np(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_np(v) for v in obj]
+    elif isinstance(obj, tuple):
+        return [convert_np(v) for v in obj]
+    elif hasattr(obj, 'item'):
+        return obj.item()
+    else:
+        return obj
 
 # Mapping of Karnataka regions to typical annual rainfall (mm)
 REGION_RAINFALL = {
@@ -80,11 +93,11 @@ def simulate_sequence(start_crop, N, P, K, water, area, used_global):
 
 def main():
     random.seed(42)
-    N = float(input("Enter soil N (kg/ha): "))
-    P = float(input("Enter soil P2O5 (kg/ha): "))
-    K = float(input("Enter soil K2O (kg/ha): "))
-    region = input("Enter Karnataka region (e.g., Bangalore, Mysore): ")
-    area = float(input("Enter land area (ha): "))
+    N = float(input())
+    P = float(input())
+    K = float(input())
+    region = input()
+    area = float(input())
     water = get_water_for_region(region)
 
     # Prepare global used set to ensure unique across all plans
@@ -105,11 +118,22 @@ def main():
             start_crop, N, P, K, water, area, used_global
         )
 
-    # Display
+    # Output as JSON
+    output = []
     for name, seq in plans.items():
-        print(f"\n{name}")
+        plan = {
+            "header": name.strip(),
+            "entries": []
+        }
         for entry in seq:
-            print(entry)
+            entry = dict(entry)
+            if isinstance(entry.get("NPK Before"), tuple):
+                entry["NPK Before"] = list(entry["NPK Before"])
+            if isinstance(entry.get("Fertilizer Added"), tuple):
+                entry["Fertilizer Added"] = list(entry["Fertilizer Added"])
+            plan["entries"].append(entry)
+        output.append(plan)
+    print(json.dumps(convert_np(output)))
 
 if __name__ == "__main__":
     main()
