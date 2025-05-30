@@ -85,11 +85,11 @@ def simulate(start, N, P, K, w, area, used_global):
 
 if __name__ == "__main__":
     random.seed(42)
-    N = float(input("Enter soil N (kg/ha): "))
-    P = float(input("Enter soil P2O5 (kg/ha): "))
-    K = float(input("Enter soil K2O (kg/ha): "))
-    region = input("Enter Karnataka region (e.g., Bangalore, Mysore): ")
-    area = float(input("Enter land area (ha): "))
+    N = float(input())
+    P = float(input())
+    K = float(input())
+    region = input()
+    area = float(input())
     w = get_water(region)
 
     used_global = set()
